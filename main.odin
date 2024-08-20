@@ -25,13 +25,20 @@ LANE_WIDTH := WIDTH / len(Lane)
 GAME_SIZE_SCALE: f32 = 1.0 // This is to scale things like movement speed of objects, since things are blazingly fast on smaller screens.
 // What we should probably do is implement some relative coordinate system that's not based on pixels.
 
-SPRITE_SCALE :: 3.5
+// BLOCK_SIZE is the size in width of a single lane.
+// There are 5 lanes, so it's probably WIDTH / 5.
+// We can scale the rest of the game according to this
+// The width corresponds to 32 pixel art pixels
+BLOCK_SIZE: f32 = 32
+SPRITE_SCALE: f32 = 3.5
 
 update_window_size :: proc(height: int) {
 	HEIGHT = height
 	WIDTH = HEIGHT * 9 / 16
 	LANE_WIDTH = WIDTH / len(Lane)
 	GAME_SIZE_SCALE = f32(WIDTH) / 1080
+	SPRITE_SCALE = 3.5 * GAME_SIZE_SCALE
+	BLOCK_SIZE = f32(WIDTH) / 5
 }
 
 player_texture: rl.Texture2D
@@ -61,22 +68,22 @@ offset: f32 = 0
 draw_static :: proc() {
 	// Offset increases to make it look like the road is moving
 	offset += ROAD_SPEED * GAME_SIZE_SCALE * rl.GetFrameTime()
-	if offset > (32 * SPRITE_SCALE) {
-		offset -= 32 * SPRITE_SCALE
+	if offset > (BLOCK_SIZE) {
+		offset -= BLOCK_SIZE
 	}
 
 
-	count: int = (HEIGHT / 32) + 1 // Add an extra row for love
+	count: int = (HEIGHT / int(BLOCK_SIZE)) + 1 // Add an extra row for love
 	for col := 0; col < 6; col += 1 {
 		for i := -1; i < count; i += 1 {
 			rl.DrawTexturePro(
 				road_texture,
 				{x = 0, y = 0, height = 32, width = 32},
 				{
-					x = f32(col) * 32 * SPRITE_SCALE,
-					y = (32 * SPRITE_SCALE) * f32(i) + offset,
-					height = 32 * SPRITE_SCALE,
-					width = 32 * SPRITE_SCALE,
+					x = f32(col) * BLOCK_SIZE,
+					y = (BLOCK_SIZE) * f32(i) + offset,
+					height = BLOCK_SIZE,
+					width = BLOCK_SIZE,
 				},
 				{0, 0},
 				0,
@@ -90,16 +97,20 @@ draw_static :: proc() {
 
 draw_health :: proc(health: f32) {
 	rl.DrawRectanglePro(
-		{20, 20, health * SPRITE_SCALE, 5 * SPRITE_SCALE},
+		{20, BLOCK_SIZE * 0.2, health * SPRITE_SCALE, BLOCK_SIZE * 0.2},
 		{0, 0},
 		0,
 		rl.Color{172, 50, 50, 255},
 	)
-	rl.DrawRectangleLinesEx({20, 20, MAX_HEALTH * SPRITE_SCALE, 5 * SPRITE_SCALE}, 3, rl.WHITE)
+	rl.DrawRectangleLinesEx(
+		{20, BLOCK_SIZE * 0.2, MAX_HEALTH * SPRITE_SCALE, BLOCK_SIZE * 0.2},
+		BLOCK_SIZE / 30,
+		rl.WHITE,
+	)
 	rl.DrawTexturePro(
 		heart_texture,
 		{height = 32, width = 32},
-		{-22, -32, 32 * SPRITE_SCALE, 32 * SPRITE_SCALE},
+		{-BLOCK_SIZE * 0.25, -BLOCK_SIZE * 0.25, BLOCK_SIZE, BLOCK_SIZE},
 		{0, 0},
 		0,
 		rl.WHITE,
@@ -212,7 +223,7 @@ player_draw :: proc(player: ^Player, frame: i32) {
 		rl.DrawTexturePro(
 			player_texture,
 			rl.Rectangle{f32(player.frame * 32), 0, 32, 32},
-			{player.body.x, player.body.y, 32 * SPRITE_SCALE, 32 * SPRITE_SCALE},
+			{player.body.x, player.body.y, BLOCK_SIZE, BLOCK_SIZE},
 			{0, 0},
 			0,
 			rl.WHITE,
@@ -221,7 +232,7 @@ player_draw :: proc(player: ^Player, frame: i32) {
 		rl.DrawTexturePro(
 			player_turn_left_texture,
 			rl.Rectangle{0, 0, 32, 32},
-			{player.body.x, player.body.y, 32 * SPRITE_SCALE, 32 * SPRITE_SCALE},
+			{player.body.x, player.body.y, BLOCK_SIZE, BLOCK_SIZE},
 			{0, 0},
 			0,
 			rl.WHITE,
@@ -230,7 +241,7 @@ player_draw :: proc(player: ^Player, frame: i32) {
 		rl.DrawTexturePro(
 			player_turn_right_texture,
 			rl.Rectangle{0, 0, 32, 32},
-			{player.body.x, player.body.y, 32 * SPRITE_SCALE, 32 * SPRITE_SCALE},
+			{player.body.x, player.body.y, BLOCK_SIZE, BLOCK_SIZE},
 			{0, 0},
 			0,
 			rl.WHITE,
@@ -264,7 +275,7 @@ status_entity_draw :: proc(status: ^StatusEntity) {
 	rl.DrawTexturePro(
 		upgrade_texture,
 		{0, 0, 32, 32},
-		{status.body.x, status.body.y, 32 * SPRITE_SCALE, 32 * SPRITE_SCALE},
+		{status.body.x, status.body.y, BLOCK_SIZE, BLOCK_SIZE},
 		{0, 0},
 		0,
 		rl.WHITE,
@@ -291,7 +302,14 @@ enemy_tick :: proc(enemy: ^Enemy) -> bool {
 
 enemy_draw :: proc(enemy: ^Enemy) {
 	// rl.DrawRectangleRec(enemy.body, rl.RED)
-	rl.DrawTextureEx(enemy_texture, {enemy.body.x, enemy.body.y}, 0, SPRITE_SCALE, rl.WHITE)
+	rl.DrawTexturePro(
+		enemy_texture,
+		{0, 0, 32, 32},
+		{enemy.body.x, enemy.body.y, BLOCK_SIZE, BLOCK_SIZE},
+		{0, 0},
+		0,
+		rl.WHITE,
+	)
 	text := rl.TextFormat("%0.f", enemy.health)
 	draw_text(text, cast(i32)enemy.body.x, cast(i32)enemy.body.y, 50, rl.WHITE)
 }
@@ -470,12 +488,7 @@ init_game :: proc() {
 		state = .Playing,
 		health = 50,
 		player = Player {
-			body = {
-				f32(WIDTH) / 2,
-				f32(HEIGHT) - (32 * SPRITE_SCALE * 1.1),
-				32 * SPRITE_SCALE,
-				32 * SPRITE_SCALE,
-			},
+			body = {f32(WIDTH) / 2, f32(HEIGHT) - (BLOCK_SIZE * 1.1), BLOCK_SIZE, BLOCK_SIZE},
 			distance = 1,
 		},
 		desired_lane = .Center,
@@ -733,7 +746,7 @@ main :: proc() {
 			TimedSpawn {
 				frame = 0,
 				spawn = Enemy {
-					body = make_rectangle(.CenterLeft, 10, 100, 100),
+					body = make_rectangle(.CenterLeft, 10, BLOCK_SIZE, BLOCK_SIZE),
 					health = 100,
 					speed = 5,
 				},
@@ -744,7 +757,7 @@ main :: proc() {
 			TimedSpawn {
 				frame = 1,
 				spawn = StatusEntity {
-					body     = make_rectangle(.CenterRight, 10, 100, 100),
+					body     = make_rectangle(.CenterRight, 10, BLOCK_SIZE, BLOCK_SIZE),
 					// status = {.DoubleBullets, .DoubleSpeed, .HomingBullets},
 					status   = {.Regeneration, .DoubleBullets},
 					duration = 5000,
@@ -756,7 +769,7 @@ main :: proc() {
 			TimedSpawn {
 				frame = 120,
 				spawn = Enemy {
-					body = make_rectangle(.Left, 10, 100, 100),
+					body = make_rectangle(.Left, 10, BLOCK_SIZE, BLOCK_SIZE),
 					health = 100,
 					speed = 10,
 				},
@@ -773,7 +786,7 @@ main :: proc() {
 			TimedSpawn {
 				frame = 0,
 				spawn = Enemy {
-					body = make_rectangle(.Left, 10, 100, 100),
+					body = make_rectangle(.Left, 10, BLOCK_SIZE, BLOCK_SIZE),
 					health = 100,
 					speed = 10,
 				},
@@ -784,7 +797,7 @@ main :: proc() {
 			TimedSpawn {
 				frame = 120,
 				spawn = Enemy {
-					body = make_rectangle(.Center, 10, 100, 100),
+					body = make_rectangle(.Center, 10, BLOCK_SIZE, BLOCK_SIZE),
 					health = 100,
 					speed = 20,
 				},
