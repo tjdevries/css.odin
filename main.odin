@@ -22,12 +22,16 @@ WIDTH := 160
 MAX_HEALTH :: 100
 LANE_WIDTH := WIDTH / len(Lane)
 
+GAME_SIZE_SCALE: f32 = 1.0 // This is to scale things like movement speed of objects, since things are blazingly fast on smaller screens.
+// What we should probably do is implement some relative coordinate system that's not based on pixels.
+
 SPRITE_SCALE :: 3.5
 
 update_window_size :: proc(height: int) {
 	HEIGHT = height
 	WIDTH = HEIGHT * 9 / 16
 	LANE_WIDTH = WIDTH / len(Lane)
+	GAME_SIZE_SCALE = f32(WIDTH) / 1080
 }
 
 player_texture: rl.Texture2D
@@ -55,7 +59,7 @@ ROAD_SPEED: f32 = 100
 offset: f32 = 0
 draw_static :: proc() {
 	// Offset increases to make it look like the road is moving
-	offset += ROAD_SPEED * rl.GetFrameTime()
+	offset += ROAD_SPEED * GAME_SIZE_SCALE * rl.GetFrameTime()
 	if offset > (32 * SPRITE_SCALE) {
 		offset -= 32 * SPRITE_SCALE
 	}
@@ -234,7 +238,7 @@ StatusEntity :: struct {
 }
 
 status_entity_tick :: proc(status: ^StatusEntity) {
-	status.body.y += 10
+	status.body.y += 10 * GAME_SIZE_SCALE
 }
 
 status_entity_draw :: proc(status: ^StatusEntity) {
@@ -256,7 +260,7 @@ Enemy :: struct {
 }
 
 enemy_tick :: proc(enemy: ^Enemy) -> bool {
-	enemy.body.y += enemy.speed
+	enemy.body.y += enemy.speed * GAME_SIZE_SCALE
 	if enemy.body.y > f32(HEIGHT) {
 		game.health -= enemy.health
 		return true
@@ -321,7 +325,11 @@ bullet_tick :: proc(bullet: ^Bullet) {
 		}
 
 		if destination.x != 0 || destination.y != 0 {
-			updated := rl.Vector2MoveTowards(bullet_vec, destination, bullet.speed * 1.2)
+			updated := rl.Vector2MoveTowards(
+				bullet_vec,
+				destination,
+				bullet.speed * 1.2 * GAME_SIZE_SCALE,
+			)
 			bullet.body.x = updated.x
 			bullet.body.y = updated.y
 
@@ -329,7 +337,7 @@ bullet_tick :: proc(bullet: ^Bullet) {
 		}
 	}
 
-	bullet.body.y -= bullet.speed
+	bullet.body.y -= bullet.speed * GAME_SIZE_SCALE
 }
 
 bullet_process :: proc(bullet: ^Bullet) -> bool {
@@ -568,7 +576,7 @@ tick :: proc(frame: i32) -> i32 {
 		player.turning = .None
 	}
 	if player.body.x != desired_x {
-		player.body.x = rl.Lerp(player.body.x, desired_x, 0.2)
+		player.body.x = rl.Lerp(player.body.x, desired_x, 0.2 * GAME_SIZE_SCALE)
 	}
 
 	if rl.IsKeyPressed(.K) || rl.IsKeyPressed(.UP) {
