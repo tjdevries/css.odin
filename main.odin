@@ -40,6 +40,7 @@ player_turn_right_texture: rl.Texture2D
 enemy_texture: rl.Texture2D
 road_texture: rl.Texture2D
 upgrade_texture: rl.Texture2D
+heart_texture: rl.Texture2D
 
 // draw_text just calls rl.DrawText, but it scales the font according to the
 // current window size.
@@ -84,7 +85,25 @@ draw_static :: proc() {
 		}
 	}
 
-	draw_text(rl.TextFormat("Health: %0.f", game.health), 10, 10, 50, rl.WHITE)
+	draw_health(game.health)
+}
+
+draw_health :: proc(health: f32) {
+	rl.DrawRectanglePro(
+		{20, 20, health * SPRITE_SCALE, 5 * SPRITE_SCALE},
+		{0, 0},
+		0,
+		rl.Color{172, 50, 50, 255},
+	)
+	rl.DrawRectangleLinesEx({20, 20, MAX_HEALTH * SPRITE_SCALE, 5 * SPRITE_SCALE}, 3, rl.WHITE)
+	rl.DrawTexturePro(
+		heart_texture,
+		{height = 32, width = 32},
+		{-22, -32, 32 * SPRITE_SCALE, 32 * SPRITE_SCALE},
+		{0, 0},
+		0,
+		rl.WHITE,
+	)
 }
 
 // Not @wagslane, but you can check out boot.dev/teej for upcoming C/Memory Management course!
@@ -781,6 +800,7 @@ main :: proc() {
 	player_turn_left_texture = rl.LoadTexture("assets/player_turn_left.png")
 	player_turn_right_texture = rl.LoadTexture("assets/player_turn_right.png")
 	upgrade_texture = rl.LoadTexture("assets/bullet_upgrade.png")
+	heart_texture = rl.LoadTexture("assets/heart.png")
 
 	frame: i32 = 0
 	for !rl.WindowShouldClose() {
