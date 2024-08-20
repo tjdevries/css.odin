@@ -1,3 +1,12 @@
+// Different characters: Turret character, Clone character
+// Stacking upgrades - passive regen, etc
+// 	Skill trees?!?
+// Enemy that shoots back
+// Barrier
+// Gates for modifying bullets as you shoot
+// Rock that is moving, can't take damage - doesn't do damage to your base
+
+
 package main
 
 import sa "core:container/small_array"
@@ -5,17 +14,22 @@ import "core:fmt"
 import rand "core:math/rand"
 import rl "vendor:raylib"
 
-// Different characters: Turrent character, Clone character
+Velocity :: [2]f32
 
-// Different damage taken by hitting base vs hitting player?
+Entity :: struct {
+	using body: rl.Rectangle,
+	velocity:   Velocity,
+	texture:    rl.Texture,
+}
 
-// Stacking upgrades - passive regen, etc
-// 	Skill trees?!?
+entity_tick :: proc(entity: ^Entity) {
+	entity.x += entity.velocity.x * GAME_SIZE_SCALE
+	entity.y += entity.velocity.y * GAME_SIZE_SCALE
+}
 
-// Enemy that shoots back
-// Barrier
-// Gates for modifying bullets as you shoot
-// Rock that is moving, can't take damage - doesn't do damage to your base
+entity_draw :: proc(entity: ^Entity) {
+	rl.DrawTextureEx(entity.texture, {entity.x, entity.y}, 0, SPRITE_SCALE, rl.WHITE)
+}
 
 HEIGHT := 320
 WIDTH := 160
@@ -160,6 +174,7 @@ PlayerTurning :: enum {
 Player :: struct {
 	split:    SplitStatus,
 	body:     rl.Rectangle,
+	// bodies:   [3]Maybe(Body),
 	distance: i32,
 	frame:    i32,
 	turning:  PlayerTurning,
@@ -284,14 +299,17 @@ status_entity_draw :: proc(status: ^StatusEntity) {
 
 
 Enemy :: struct {
-	body:   rl.Rectangle,
-	health: f32,
-	speed:  f32,
+	using entity: Entity,
+	health:       f32,
+}
+
+enemy_make :: proc(body: rl.Rectangle, health: f32, velocity: Velocity) -> Enemy {
+	return {body = body, health = health, velocity = velocity, texture = enemy_texture}
 }
 
 enemy_tick :: proc(enemy: ^Enemy) -> bool {
-	enemy.body.y += enemy.speed * GAME_SIZE_SCALE
-	if enemy.body.y > f32(HEIGHT) {
+	entity_tick(enemy)
+	if enemy.y > f32(HEIGHT) {
 		game.health -= enemy.health
 		return true
 	}
@@ -302,14 +320,18 @@ enemy_tick :: proc(enemy: ^Enemy) -> bool {
 
 enemy_draw :: proc(enemy: ^Enemy) {
 	// rl.DrawRectangleRec(enemy.body, rl.RED)
-	rl.DrawTexturePro(
-		enemy_texture,
-		{0, 0, 32, 32},
-		{enemy.body.x, enemy.body.y, BLOCK_SIZE, BLOCK_SIZE},
-		{0, 0},
-		0,
-		rl.WHITE,
-	)
+	// rl.DrawTexturePro(
+	// 	enemy_texture,
+	// 	{0, 0, 32, 32},
+	// 	{enemy.body.x, enemy.body.y, BLOCK_SIZE, BLOCK_SIZE},
+	// 	{0, 0},
+	// 	0,
+	// 	rl.WHITE,
+	// )
+	// rl.DrawRectangleRec(enemy.body, rl.RED)
+	// rl.DrawTextureEx(enemy_texture, {enemy.body.x, enemy.body.y}, 0, SPRITE_SCALE, rl.WHITE)
+
+	entity_draw(enemy)
 	text := rl.TextFormat("%0.f", enemy.health)
 	draw_text(text, cast(i32)enemy.body.x, cast(i32)enemy.body.y, 50, rl.WHITE)
 }
@@ -387,7 +409,7 @@ bullet_process :: proc(bullet: ^Bullet) -> bool {
 		if rl.CheckCollisionRecs(bullet.body, enemy.body) {
 			enemy.health -= bullet.damage
 			if .SlowingBullets in bullet.status {
-				enemy.speed *= 0.8
+				enemy.velocity *= 0.8
 			}
 			return true
 		}
@@ -723,6 +745,15 @@ main :: proc() {
 	rl.SetTargetFPS(60)
 	rl.InitWindow(i32(WIDTH), i32(HEIGHT), "Cool Scamming Shooter: CSS for short")
 
+	enemy_texture = rl.LoadTexture("assets/mushroom-enemy.png")
+	road_texture = rl.LoadTexture("assets/road_low.png")
+	player_texture = rl.LoadTexture("assets/player_sheet.png")
+	player_turn_left_texture = rl.LoadTexture("assets/player_turn_left.png")
+	player_turn_right_texture = rl.LoadTexture("assets/player_turn_right.png")
+	upgrade_texture = rl.LoadTexture("assets/bullet_upgrade.png")
+	heart_texture = rl.LoadTexture("assets/heart.png")
+
+
 	// Initialize window size based on current monitor
 	current_monitor := rl.GetCurrentMonitor()
 	height := int(f32(rl.GetMonitorHeight(current_monitor)) * 0.9)
@@ -745,11 +776,11 @@ main :: proc() {
 			&level,
 			TimedSpawn {
 				frame = 0,
-				spawn = Enemy {
+				spawn = enemy_make(
 					body = make_rectangle(.CenterLeft, 10, BLOCK_SIZE, BLOCK_SIZE),
 					health = 100,
-					speed = 5,
-				},
+					velocity = {0, 5},
+				),
 			},
 		)
 		level_append_spawn(
@@ -768,11 +799,11 @@ main :: proc() {
 			&level,
 			TimedSpawn {
 				frame = 120,
-				spawn = Enemy {
+				spawn = enemy_make(
 					body = make_rectangle(.Left, 10, BLOCK_SIZE, BLOCK_SIZE),
 					health = 100,
-					speed = 10,
-				},
+					velocity = {0, 10},
+				),
 			},
 		)
 
@@ -785,35 +816,27 @@ main :: proc() {
 			&level,
 			TimedSpawn {
 				frame = 0,
-				spawn = Enemy {
+				spawn = enemy_make(
 					body = make_rectangle(.Left, 10, BLOCK_SIZE, BLOCK_SIZE),
 					health = 100,
-					speed = 10,
-				},
+					velocity = {0, 10},
+				),
 			},
 		)
 		level_append_spawn(
 			&level,
 			TimedSpawn {
 				frame = 120,
-				spawn = Enemy {
+				spawn = enemy_make(
 					body = make_rectangle(.Center, 10, BLOCK_SIZE, BLOCK_SIZE),
 					health = 100,
-					speed = 20,
-				},
+					velocity = {0, 20},
+				),
 			},
 		)
 
 		append(&game.levels, level)
 	}
-
-	enemy_texture = rl.LoadTexture("assets/mushroom-enemy.png")
-	road_texture = rl.LoadTexture("assets/road_low.png")
-	player_texture = rl.LoadTexture("assets/player_sheet.png")
-	player_turn_left_texture = rl.LoadTexture("assets/player_turn_left.png")
-	player_turn_right_texture = rl.LoadTexture("assets/player_turn_right.png")
-	upgrade_texture = rl.LoadTexture("assets/bullet_upgrade.png")
-	heart_texture = rl.LoadTexture("assets/heart.png")
 
 	frame: i32 = 0
 	for !rl.WindowShouldClose() {
