@@ -17,24 +17,62 @@ import rl "vendor:raylib"
 // Gates for modifying bullets as you shoot
 // Rock that is moving, can't take damage - doesn't do damage to your base
 
-HEIGHT :: 1920
-WIDTH :: 1080
+HEIGHT := 320
+WIDTH := 160
 MAX_HEALTH :: 100
-LANE_WIDTH :: WIDTH / len(Lane)
+LANE_WIDTH := WIDTH / len(Lane)
 
+SPRITE_SCALE :: 3.5
+
+update_window_size :: proc(height: int) {
+	HEIGHT = height
+	WIDTH = HEIGHT * 9 / 16
+	LANE_WIDTH = WIDTH / len(Lane)
+}
+
+player_texture: rl.Texture2D
+player_turn_left_texture: rl.Texture2D
+player_turn_right_texture: rl.Texture2D
 enemy_texture: rl.Texture2D
 road_texture: rl.Texture2D
+upgrade_texture: rl.Texture2D
 
+// draw_text just calls rl.DrawText, but it scales the font according to the
+// current window size.
+draw_text :: proc(text: cstring, pos_x, pos_y: i32, font_size: i32, color: rl.Color) {
+	font_size := i32(f32(font_size) * (f32(WIDTH) / 1080))
+	rl.DrawText(text, pos_x, pos_y, font_size, rl.WHITE)
+}
+
+// measure_text just calls rl.MeasureText, but it scales the font according
+// to the current window size. Useful for positioning font.
+measure_text :: proc(text: cstring, font_size: i32) -> i32 {
+	font_size := i32(f32(font_size) * (f32(WIDTH) / 1080))
+	return rl.MeasureText(text, font_size)
+}
+
+ROAD_SPEED: f32 = 100
+offset: f32 = 0
 draw_static :: proc() {
-	trim := f32(0)
+	// Offset increases to make it look like the road is moving
+	offset += ROAD_SPEED * rl.GetFrameTime()
+	if offset > (32 * SPRITE_SCALE) {
+		offset -= 32 * SPRITE_SCALE
+	}
 
-	count: int = HEIGHT / 64
-	for col := 0; col < 5; col += 1 {
-		for i := 0; i < count; i += 1 {
+
+	count: int = (HEIGHT / 32) + 1 // Add an extra row for love
+	for col := 0; col < 6; col += 1 {
+		for i := -1; i < count; i += 1 {
 			rl.DrawTexturePro(
 				road_texture,
-				{x = (64.0 * 3.0) + trim, y = 0, height = 64, width = 64 - trim},
-				{x = f32(col) * WIDTH / 5, y = 64 * f32(i), height = 64, width = WIDTH / 5},
+				{x = 0, y = 0, height = 32, width = 32},
+				{
+					x = f32(col) * 32 * SPRITE_SCALE,
+					y = (32 * SPRITE_SCALE) * f32(i) + offset,
+					height = 32 * SPRITE_SCALE,
+					width = 32 * SPRITE_SCALE,
+				},
 				{0, 0},
 				0,
 				rl.BLUE,
@@ -42,7 +80,7 @@ draw_static :: proc() {
 		}
 	}
 
-	rl.DrawText(rl.TextFormat("Health: %0.f", game.health), 10, 10, 50, rl.WHITE)
+	draw_text(rl.TextFormat("Health: %0.f", game.health), 10, 10, 50, rl.WHITE)
 }
 
 // Not @wagslane, but you can check out boot.dev/teej for upcoming C/Memory Management course!
@@ -65,7 +103,7 @@ lane_move :: proc(lane: Lane, distance: i32) -> Lane {
 }
 
 lane_to_x :: proc(lane: Lane) -> f32 {
-	return (f32(lane) * 2 + 1) * WIDTH / 10
+	return (f32(lane) * 2 + 1) * f32(WIDTH) / 10
 }
 
 make_rectangle :: proc(lane: Lane, y, width, height: f32) -> rl.Rectangle {
@@ -79,10 +117,18 @@ SplitStatus :: enum {
 	Split,
 }
 
+PlayerTurning :: enum {
+	None,
+	Left,
+	Right,
+}
+
 Player :: struct {
 	split:    SplitStatus,
 	body:     rl.Rectangle,
 	distance: i32,
+	frame:    i32,
+	turning:  PlayerTurning,
 }
 
 count := 0
@@ -113,15 +159,15 @@ player_rectangles :: proc(player: ^Player) -> sa.Small_Array(2, rl.Rectangle) {
 		sa.append(&rects, player.body)
 	} else {
 		left := player.body
-		left.x -= lane_to_x(Lane(player.distance)) - LANE_WIDTH / 2
+		left.x -= lane_to_x(Lane(player.distance)) - f32(LANE_WIDTH) / 2
 		if left.x < 0 {
 			left.x = lane_to_x(.Left) - player.body.width / 2
 		}
 		sa.append(&rects, left)
 
 		right := player.body
-		right.x += lane_to_x(Lane(player.distance)) - LANE_WIDTH / 2
-		if right.x > WIDTH {
+		right.x += lane_to_x(Lane(player.distance)) - f32(LANE_WIDTH) / 2
+		if right.x > f32(WIDTH) {
 			right.x = lane_to_x(.Right) - player.body.width / 2
 		}
 		sa.append(&rects, right)
@@ -130,11 +176,42 @@ player_rectangles :: proc(player: ^Player) -> sa.Small_Array(2, rl.Rectangle) {
 	return rects
 }
 
-player_draw :: proc(player: ^Player) {
-	rects := player_rectangles(player)
-
-	for rect in sa.slice(&rects) {
-		rl.DrawRectangleRec(rect, rl.GREEN)
+PLAYER_FRAME_SPEED := 5 // Every how many frames should the player animation update?
+player_draw :: proc(player: ^Player, frame: i32) {
+	switch player.turning {
+	case .None:
+		if int(frame) % PLAYER_FRAME_SPEED == 0 {
+			player.frame += 1
+		}
+		if player.frame > 2 {
+			player.frame = 0
+		}
+		rl.DrawTexturePro(
+			player_texture,
+			rl.Rectangle{f32(player.frame * 32), 0, 32, 32},
+			{player.body.x, player.body.y, 32 * SPRITE_SCALE, 32 * SPRITE_SCALE},
+			{0, 0},
+			0,
+			rl.WHITE,
+		)
+	case .Left:
+		rl.DrawTexturePro(
+			player_turn_left_texture,
+			rl.Rectangle{0, 0, 32, 32},
+			{player.body.x, player.body.y, 32 * SPRITE_SCALE, 32 * SPRITE_SCALE},
+			{0, 0},
+			0,
+			rl.WHITE,
+		)
+	case .Right:
+		rl.DrawTexturePro(
+			player_turn_right_texture,
+			rl.Rectangle{0, 0, 32, 32},
+			{player.body.x, player.body.y, 32 * SPRITE_SCALE, 32 * SPRITE_SCALE},
+			{0, 0},
+			0,
+			rl.WHITE,
+		)
 	}
 }
 
@@ -161,7 +238,14 @@ status_entity_tick :: proc(status: ^StatusEntity) {
 }
 
 status_entity_draw :: proc(status: ^StatusEntity) {
-	rl.DrawRectangleRec(status.body, rl.PINK)
+	rl.DrawTexturePro(
+		upgrade_texture,
+		{0, 0, 32, 32},
+		{status.body.x, status.body.y, 32 * SPRITE_SCALE, 32 * SPRITE_SCALE},
+		{0, 0},
+		0,
+		rl.WHITE,
+	)
 }
 
 
@@ -173,7 +257,7 @@ Enemy :: struct {
 
 enemy_tick :: proc(enemy: ^Enemy) -> bool {
 	enemy.body.y += enemy.speed
-	if enemy.body.y > HEIGHT {
+	if enemy.body.y > f32(HEIGHT) {
 		game.health -= enemy.health
 		return true
 	}
@@ -184,9 +268,9 @@ enemy_tick :: proc(enemy: ^Enemy) -> bool {
 
 enemy_draw :: proc(enemy: ^Enemy) {
 	// rl.DrawRectangleRec(enemy.body, rl.RED)
-	rl.DrawTextureEx(enemy_texture, {enemy.body.x, enemy.body.y}, 0, 3.5, rl.WHITE)
+	rl.DrawTextureEx(enemy_texture, {enemy.body.x, enemy.body.y}, 0, SPRITE_SCALE, rl.WHITE)
 	text := rl.TextFormat("%0.f", enemy.health)
-	rl.DrawText(text, cast(i32)enemy.body.x, cast(i32)enemy.body.y, 50, rl.WHITE)
+	draw_text(text, cast(i32)enemy.body.x, cast(i32)enemy.body.y, 50, rl.WHITE)
 }
 
 
@@ -224,7 +308,7 @@ bullet_tick :: proc(bullet: ^Bullet) {
 		destination: rl.Vector2
 		bullet_vec: rl.Vector2 = {bullet.body.x, bullet.body.y}
 		for &enemy in game.enemies {
-			if enemy.body.y - (WIDTH / 8) > bullet.body.y {
+			if enemy.body.y - (f32(WIDTH) / 8) > bullet.body.y {
 				continue
 			}
 
@@ -352,11 +436,23 @@ Game :: struct {
 	levels:        [dynamic]Level,
 }
 
-game := Game {
-	state = .Playing,
-	health = 50,
-	player = Player{body = {WIDTH / 2, HEIGHT - 100, 100, 100}, distance = 1},
-	desired_lane = .Center,
+game: Game
+// Initializes the game state after the WIDTH and HEIGHT has been set
+init_game :: proc() {
+	game = Game {
+		state = .Playing,
+		health = 50,
+		player = Player {
+			body = {
+				f32(WIDTH) / 2,
+				f32(HEIGHT) - (32 * SPRITE_SCALE * 1.1),
+				32 * SPRITE_SCALE,
+				32 * SPRITE_SCALE,
+			},
+			distance = 1,
+		},
+		desired_lane = .Center,
+	}
 }
 
 
@@ -406,8 +502,25 @@ tick :: proc(frame: i32) -> i32 {
 	statuses := &game.statuses
 
 	if game.state == .Waiting {
-		rl.DrawText("Press H or L to move", WIDTH / 2 - 250, HEIGHT / 2 - 100, 100, rl.WHITE)
-		rl.DrawText("Press enter to begin", WIDTH / 2 - 250, HEIGHT / 2 - 100 - 200, 100, rl.WHITE)
+		MOVE_TEXT :: "Press H or L to move"
+		text_width := measure_text(MOVE_TEXT, 80)
+		draw_text(
+			MOVE_TEXT,
+			i32(WIDTH) / 2 - (text_width / 2),
+			i32(HEIGHT) / 2 - 100,
+			80,
+			rl.WHITE,
+		)
+
+		BEGIN_TEXT :: "Press enter to begin"
+		text_width = measure_text(BEGIN_TEXT, 80)
+		draw_text(
+			BEGIN_TEXT,
+			i32(WIDTH) / 2 - (text_width / 2),
+			i32(HEIGHT) / 2 - 100 - 200,
+			80,
+			rl.WHITE,
+		)
 
 		if rl.IsKeyPressed(.ENTER) {
 			game.state = .Playing
@@ -429,12 +542,12 @@ tick :: proc(frame: i32) -> i32 {
 	}
 
 	if game.state == .Win {
-		rl.DrawText("YOU W", WIDTH / 2 - 250, HEIGHT / 2 - 100, 200, rl.WHITE)
+		draw_text("YOU W", i32(WIDTH) / 2 - 250, i32(HEIGHT) / 2 - 100, 200, rl.WHITE)
 		return frame + 1
 	}
 
 	if game.state == .Lost {
-		rl.DrawText("BIG L", WIDTH / 2 - 250, HEIGHT / 2 - 100, 200, rl.WHITE)
+		draw_text("BIG L", i32(WIDTH) / 2 - 250, i32(HEIGHT) / 2 - 100, 200, rl.WHITE)
 		return frame + 1
 	}
 
@@ -446,6 +559,14 @@ tick :: proc(frame: i32) -> i32 {
 	}
 
 	desired_x := lane_to_x(game.desired_lane) - player.body.width / 2
+	TURN_DISTANCE :: 5 // The distance at which a turn is considered complete, even though the sprite might still move a little
+	if int(player.body.x) < int(desired_x) - TURN_DISTANCE {
+		player.turning = .Left
+	} else if int(player.body.x) > int(desired_x) + TURN_DISTANCE {
+		player.turning = .Right
+	} else {
+		player.turning = .None
+	}
 	if player.body.x != desired_x {
 		player.body.x = rl.Lerp(player.body.x, desired_x, 0.2)
 	}
@@ -554,18 +675,29 @@ tick :: proc(frame: i32) -> i32 {
 		return 0
 	}
 
-	player_draw(player)
+	player_draw(player, frame)
 	return frame + 1
 }
 
 main :: proc() {
 	rl.SetTargetFPS(60)
-	rl.InitWindow(WIDTH, HEIGHT, "Cool Scamming Shooter: CSS for short")
+	rl.InitWindow(i32(WIDTH), i32(HEIGHT), "Cool Scamming Shooter: CSS for short")
+
+	// Initialize window size based on current monitor
+	current_monitor := rl.GetCurrentMonitor()
+	height := int(f32(rl.GetMonitorHeight(current_monitor)) * 0.9)
+	update_window_size(height)
+
+	rl.SetWindowSize(i32(WIDTH), i32(HEIGHT))
+
+	// Could probably make the window resizable as well
 
 	// LOL rotated monitors
 	// 3840 x 2160
 	// 2160 x 3840
-	rl.SetWindowPosition(3162, (3840 - 2160) / 2)
+	rl.SetWindowPosition((rl.GetMonitorWidth(current_monitor) - i32(WIDTH)) / 2, 0)
+
+	init_game()
 
 	{
 		level := Level{}
@@ -636,7 +768,11 @@ main :: proc() {
 	}
 
 	enemy_texture = rl.LoadTexture("assets/mushroom-enemy.png")
-	road_texture = rl.LoadTexture("assets/road.png")
+	road_texture = rl.LoadTexture("assets/road_low.png")
+	player_texture = rl.LoadTexture("assets/player_sheet.png")
+	player_turn_left_texture = rl.LoadTexture("assets/player_turn_left.png")
+	player_turn_right_texture = rl.LoadTexture("assets/player_turn_right.png")
+	upgrade_texture = rl.LoadTexture("assets/bullet_upgrade.png")
 
 	frame: i32 = 0
 	for !rl.WindowShouldClose() {
